@@ -1,5 +1,5 @@
 class TitleElement:
-    def __init__(self, value, position, status):
+    def __init__(self, value, position, status=False):
         self.value = int(value.replace("tile-","")) if value else None
         self.position = position.replace("tile-position-", "").split("-") if position else None
         self.position = [int(i) for i in self.position]

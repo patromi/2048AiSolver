@@ -1,5 +1,4 @@
 from scraper.Scraper import Scraper
-import time
 
 
 class GameEnv(Scraper):
@@ -13,10 +12,10 @@ class GameEnv(Scraper):
             # keyboard.on_press(lambda e: print(e.name))
             if self.check_game_is_over():
                 result = 0
-            time.sleep(0.5)
             self.move()
             self.get_html()
             print(self.matrix)
+            print(self.result)
 
 
 x = GameEnv()
