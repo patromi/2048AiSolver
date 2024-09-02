@@ -1,31 +1,44 @@
-import random
+import time
 
 from bs4 import BeautifulSoup
 import numpy as np
-import math
 from selenium import webdriver
 from selenium.webdriver import ActionChains
 from Objects.Tile import TitleElement
-from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from mover.Mover import Mover
+from .utils import ScraperUtils
 
-class Scraper:
+
+class Scraper(ScraperUtils, Mover):
     def __init__(self, url: str, n_field: int):
-        self.in_row = self._get_in_row(n_field=n_field)
-        self.browser = webdriver.Firefox()
+        super().__init__(url, n_field)
+        firefox_options = Options()
+        firefox_options.set_preference("dom.webnotifications.enabled", False)
+        firefox_options.set_preference("useAutomationExtension", False)
+        firefox_options.set_preference("dom.webdriver.enabled", False)
+        firefox_options.set_capability("unhandledPromptBehavior", "ignore")
+
+        capabilities = DesiredCapabilities().FIREFOX
+        capabilities["unhandledPromptBehavior"] = "ignore"
+        self.browser = webdriver.Firefox(options=firefox_options)
+
         self.result = 0
         self.matrix = self._get_empty_matrix()
         self._open_url(url=url)
-        self.allowed_keybinds = ('w', 's', 'd', 'a')
 
-    def _get_empty_matrix(self):
-        return np.zeros((self.in_row, self.in_row))
+    def make_action(self, action):
+        self.move(action)
+        self.get_html()
+        return self.matrix, self.result
 
-    @staticmethod
-    def _get_in_row(n_field : int):
-        return round(math.sqrt(n_field))
-
-    def _open_url(self,url:str):
-        self.browser.get(url)
+    def reset(self):
+        print("Resetting the game")
+        new_btn = self.browser.find_element('class name', 'restart-button')
+        ActionChains(self.browser).click(new_btn).perform()
+        self.get_html()
+        return self.matrix
 
     def get_html(self):
         if self.browser.title != '2048':
@@ -34,15 +47,17 @@ class Scraper:
         assert '2048' in self.browser.title
         return self.parse_html(html)
 
-    def _calc_result(self, result: str):
-        if result:
-            result = result.split('+')
-            return sum([int(i) for i in result])
+    def _open_url(self, url: str):
+        self.browser.get(url)
+
+    def scrap_result(self, soup: BeautifulSoup):
+        result = soup.find('div', {'class': 'score-container'}).text
+        self.result = int(result) if result.isdigit() else self._calc_result(result)
 
     def parse_html(self, html):
         soup = BeautifulSoup(html, 'html.parser')
-        result = soup.find('div', {'class': 'score-container'}).text
-        self.result = result if result.isdigit() else self._calc_result(result)
+        self.scrap_result(soup)
+
         game_field = soup.find('div', {'class': 'tile-container'})
         tile_elements = []
         for tile_html in game_field.children:
@@ -60,40 +75,20 @@ class Scraper:
             self.matrix[square.position[1] - 1][square.position[0] - 1] = square.value
 
     def check_game_is_over(self):
-        html = self.browser.page_source
-        soup = BeautifulSoup(html, "html.parser")
-        div = soup.find("div", {"class": "game-message game-over"})
-        if div is not None:
-            retry_btn = self.browser.find_element('class name','retry-button')
-            ActionChains(self.browser).click(retry_btn).perform()
+        self.get_html()
+        if 0 in self.matrix:
+            return False
+        for i in range(self.in_row):
+            for j in range(self.in_row):
+                if j + 1 < self.in_row and self.matrix[i][j] == self.matrix[i][j + 1]:
+                    return False
+                if i + 1 < self.in_row and self.matrix[i][j] == self.matrix[i + 1][j]:
+                    return False
 
-    def move(self):
-        number = random.randint(0, 3)
-        key = self.allowed_keybinds[number]
+        # retry_btn = self.browser.find_element('class name', 'retry-button')
 
-        # Mapowanie klawiszy na odpowiednie kody klawiszy JavaScript
-        key_map = {
-            "up": "ArrowUp",
-            "down": "ArrowDown",
-            "left": "ArrowLeft",
-            "right": "ArrowRight",
-            "w": "KeyW",
-            "a": "KeyA",
-            "s": "KeyS",
-            "d": "KeyD"
-        }
-
-        # Sprawdzenie, czy klucz istnieje w mapie
-        if key in key_map:
-            js_code = f'''
-            var event = new KeyboardEvent('keydown', {{
-                key: '{key_map[key]}',
-                code: '{key_map[key]}',
-                keyCode: {ord(key_map[key][-1])}, 
-                which: {ord(key_map[key][-1])}, 
-                bubbles: true 
-            }});
-            document.dispatchEvent(event);
-            '''
-            self.browser.execute_script(js_code)
-
+        # ActionChains(self.browser).click(retry_btn).perform()
+        time.sleep(1)
+        print(self.matrix)
+        print("Game is over")
+        return True
